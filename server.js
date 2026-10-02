@@ -75,8 +75,22 @@ app.post("/api/analyze", analyzeLimiter, async (req, res) => {
     });
 
     // Send the lead their report. If this fails, the visitor should know —
-    // don't claim success on a report they'll never receive.
-    await sendEmail({ to: cleanEmail, subject: leadEmail.subject, html: leadEmail.html });
+    // don't claim success on a report they'll never receive. Caught
+    // separately from analysis errors so the logs (and the response) make
+    // clear this was an email-delivery problem, not a scanning problem.
+    try {
+      await sendEmail({ to: cleanEmail, subject: leadEmail.subject, html: leadEmail.html });
+    } catch (err) {
+      console.error("Lead report email failed to send:", err.message);
+      return res.status(502).json({
+        error:
+          "We scanned your site successfully, but couldn't send the report email. " +
+          "This is usually a Resend configuration issue (check RESEND_API_KEY, FROM_EMAIL, " +
+          "and — if using the onboarding@resend.dev sender — that the recipient matches " +
+          "your Resend account email, since that sandbox sender can't email anyone else " +
+          "until a domain is verified). Please try again shortly.",
+      });
+    }
 
     // Best-effort notification to the owner — a failure here shouldn't block
     // the visitor's success response, but it is logged.
@@ -101,6 +115,32 @@ app.post("/api/analyze", analyzeLimiter, async (req, res) => {
 });
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+// TEMPORARY diagnostic endpoint — never reveals the actual secret, only
+// enough shape/metadata to catch copy-paste mistakes (quotes, whitespace,
+// wrong length, wrong prefix). Delete this route once email is working;
+// it's not something a public lead-magnet site should keep exposed long-term.
+app.get("/api/debug-env", (_req, res) => {
+  const key = process.env.RESEND_API_KEY || "";
+  const from = process.env.FROM_EMAIL || "";
+  res.json({
+    RESEND_API_KEY: {
+      present: Boolean(process.env.RESEND_API_KEY),
+      length: key.length,
+      startsWithRe_: key.startsWith("re_"),
+      hasLeadingOrTrailingWhitespace: key !== key.trim(),
+      hasQuoteCharacters: key.includes('"') || key.includes("'"),
+      first4: key.slice(0, 4),
+      last4: key.slice(-4),
+    },
+    FROM_EMAIL: {
+      present: Boolean(process.env.FROM_EMAIL),
+      value: from, // not a secret, safe to show in full
+      hasQuoteCharacters: from.includes('"') || from.includes("'"),
+    },
+    OWNER_EMAIL_present: Boolean(process.env.OWNER_EMAIL),
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`Booking-flow audit lead magnet listening on port ${PORT}`);
