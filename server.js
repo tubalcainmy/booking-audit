@@ -116,32 +116,6 @@ app.post("/api/analyze", analyzeLimiter, async (req, res) => {
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-// TEMPORARY diagnostic endpoint — never reveals the actual secret, only
-// enough shape/metadata to catch copy-paste mistakes (quotes, whitespace,
-// wrong length, wrong prefix). Delete this route once email is working;
-// it's not something a public lead-magnet site should keep exposed long-term.
-app.get("/api/debug-env", (_req, res) => {
-  const key = process.env.RESEND_API_KEY || "";
-  const from = process.env.FROM_EMAIL || "";
-  res.json({
-    RESEND_API_KEY: {
-      present: Boolean(process.env.RESEND_API_KEY),
-      length: key.length,
-      startsWithRe_: key.startsWith("re_"),
-      hasLeadingOrTrailingWhitespace: key !== key.trim(),
-      hasQuoteCharacters: key.includes('"') || key.includes("'"),
-      first4: key.slice(0, 4),
-      last4: key.slice(-4),
-    },
-    FROM_EMAIL: {
-      present: Boolean(process.env.FROM_EMAIL),
-      value: from, // not a secret, safe to show in full
-      hasQuoteCharacters: from.includes('"') || from.includes("'"),
-    },
-    OWNER_EMAIL_present: Boolean(process.env.OWNER_EMAIL),
-  });
-});
-
 app.listen(PORT, () => {
   console.log(`Booking-flow audit lead magnet listening on port ${PORT}`);
 });
