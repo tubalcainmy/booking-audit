@@ -137,6 +137,60 @@
     color: #6b7280;
   }
   .checks span { white-space: nowrap; }
+  .report { display: none; }
+  .report.show { display: block; }
+  .report-head {
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 16px;
+    margin-bottom: 14px;
+  }
+  .js-notice {
+    color: #8a6d00;
+    background: #fff8e1;
+    border: 1px solid #f1d98a;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0 0 18px;
+  }
+  .check-list {
+    border: 1px solid #eee;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  .check-row {
+    display: flex;
+    gap: 14px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #eee;
+  }
+  .check-row:last-child { border-bottom: none; }
+  .check-icon { font-size: 18px; line-height: 1.4; }
+  .check-label { font-weight: 600; color: #1a1a1a; font-size: 14.5px; }
+  .check-status { font-weight: 600; font-size: 12.5px; margin-top: 2px; }
+  .check-note { color: #555; font-size: 13.5px; margin-top: 6px; line-height: 1.5; }
+  .cta-box {
+    background: var(--gold-bg);
+    border: 1px solid var(--gold);
+    border-radius: 6px;
+    padding: 16px 18px;
+  }
+  .cta-title { font-weight: 700; color: var(--navy); font-size: 14px; margin-bottom: 6px; }
+  .cta-body { font-size: 13.5px; color: var(--slate); line-height: 1.6; }
+  .cta-links { margin-top: 12px; font-size: 13.5px; }
+  .cta-links a { color: var(--navy); font-weight: 700; text-decoration: none; margin-right: 18px; }
+  .reset-link {
+    display: block;
+    text-align: center;
+    margin-top: 18px;
+    font-size: 13px;
+    color: #6b7280;
+    cursor: pointer;
+    text-decoration: underline;
+  }
   footer {
     text-align: center;
     font-size: 12px;
@@ -194,6 +248,9 @@
 
         <div id="status" class="status" role="status" aria-live="polite"></div>
       </form>
+
+      <div id="report" class="report" role="status" aria-live="polite"></div>
+      <div id="resetLink" class="reset-link" style="display:none;">Scan another site</div>
     </div>
 
     <footer>Tubalcain Ads Enterprise — Go-to-Market Engineering &amp; Booking Systems · Warri, Delta State, Nigeria</footer>
@@ -203,11 +260,90 @@
     const form = document.getElementById("leadForm");
     const btn = document.getElementById("submitBtn");
     const statusEl = document.getElementById("status");
+    const reportEl = document.getElementById("report");
+    const resetLink = document.getElementById("resetLink");
+
+    const STATUS_META = {
+      detected: { icon: "✅", word: "Detected", color: "#1a7f37" },
+      not_detected: { icon: "⚠️", word: "Not detected", color: "#b42318" },
+      unverified: { icon: "❓", word: "Could not verify automatically", color: "#8a6d00" },
+    };
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
 
     function showStatus(kind, message) {
       statusEl.className = "status show " + kind;
       statusEl.textContent = message;
     }
+
+    function renderReport(report) {
+      const rows = (report.checks || [])
+        .map((c) => {
+          const meta = STATUS_META[c.status] || STATUS_META.unverified;
+          return `
+            <div class="check-row">
+              <div class="check-icon">${meta.icon}</div>
+              <div>
+                <div class="check-label">${escapeHtml(c.label)}</div>
+                <div class="check-status" style="color:${meta.color};">${meta.word}</div>
+                <div class="check-note">${escapeHtml(c.note)}</div>
+              </div>
+            </div>`;
+        })
+        .join("");
+
+      const jsNotice = report.likelyJsRendered
+        ? `<div class="js-notice">Heads up: this site appears to load its content dynamically
+             (a JavaScript-driven app). This scan reads the raw HTML only, so some booking
+             elements added after the page loads may not show up here even if they exist.
+             A manual check is the only way to confirm this with certainty.</div>`
+        : "";
+
+      const links = [];
+      if (report.ownerWhatsapp) {
+        links.push(
+          `<a href="https://wa.me/${encodeURIComponent(report.ownerWhatsapp)}" target="_blank" rel="noopener">WhatsApp me &rarr;</a>`
+        );
+      }
+      if (report.ownerPortfolioUrl) {
+        links.push(
+          `<a href="${escapeHtml(report.ownerPortfolioUrl)}" target="_blank" rel="noopener">See my work &rarr;</a>`
+        );
+      }
+
+      reportEl.innerHTML = `
+        <div class="report-head">Your booking-flow report for ${escapeHtml(report.url)}</div>
+        ${jsNotice}
+        <div class="check-list">${rows}</div>
+        <div class="cta-box">
+          <div class="cta-title">Want the full picture?</div>
+          <div class="cta-body">
+            This scan can't complete a real test booking, check your payment flow end-to-end,
+            or see anything your site loads dynamically with JavaScript. I do a full manual
+            walkthrough — actually testing the booking and payment path as a guest would —
+            and can tell you exactly what's costing you bookings and how to fix it.
+          </div>
+          <div class="cta-links">${links.join("")}</div>
+        </div>`;
+      reportEl.classList.add("show");
+      resetLink.style.display = "block";
+      form.style.display = "none";
+    }
+
+    resetLink.addEventListener("click", () => {
+      reportEl.classList.remove("show");
+      reportEl.innerHTML = "";
+      resetLink.style.display = "none";
+      form.style.display = "block";
+      form.reset();
+      statusEl.className = "status";
+    });
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -236,11 +372,12 @@
           throw new Error(data.error || "Something went wrong. Please try again.");
         }
 
-        showStatus(
-          "success",
-          "Done! Check " + payload.email + " for your free booking-flow report."
-        );
-        form.reset();
+        if (data.report) {
+          renderReport(data.report);
+        } else {
+          showStatus("success", "Done! Your report has been processed.");
+          form.reset();
+        }
       } catch (err) {
         showStatus("error", err.message || "Something went wrong. Please try again.");
       } finally {

@@ -65,31 +65,28 @@ app.post("/api/analyze", analyzeLimiter, async (req, res) => {
     const ownerPortfolioUrl = process.env.OWNER_PORTFOLIO_URL || "";
     const ownerEmail = process.env.OWNER_EMAIL;
 
-    const leadEmail = leadReportEmail({
-      name: cleanName,
-      url: result.finalUrl || result.url,
-      checks: result.checks,
-      likelyJsRendered: result.likelyJsRendered,
-      ownerWhatsapp,
-      ownerPortfolioUrl,
-    });
-
-    // Send the lead their report. If this fails, the visitor should know —
-    // don't claim success on a report they'll never receive. Caught
-    // separately from analysis errors so the logs (and the response) make
-    // clear this was an email-delivery problem, not a scanning problem.
-    try {
-      await sendEmail({ to: cleanEmail, subject: leadEmail.subject, html: leadEmail.html });
-    } catch (err) {
-      console.error("Lead report email failed to send:", err.message);
-      return res.status(502).json({
-        error:
-          "We scanned your site successfully, but couldn't send the report email. " +
-          "This is usually a Resend configuration issue (check RESEND_API_KEY, FROM_EMAIL, " +
-          "and — if using the onboarding@resend.dev sender — that the recipient matches " +
-          "your Resend account email, since that sandbox sender can't email anyone else " +
-          "until a domain is verified). Please try again shortly.",
+    // Emailing the report to the LEAD requires a verified sending domain in
+    // Resend — on the free onboarding@resend.dev sandbox sender, Resend will
+    // only deliver to the account's own address. Until a domain is verified,
+    // the report is returned in this response and rendered on the page
+    // instead. Set SEND_LEAD_EMAIL=true once a domain is verified to also
+    // email it to the lead.
+    if (process.env.SEND_LEAD_EMAIL === "true") {
+      const leadEmail = leadReportEmail({
+        name: cleanName,
+        url: result.finalUrl || result.url,
+        checks: result.checks,
+        likelyJsRendered: result.likelyJsRendered,
+        ownerWhatsapp,
+        ownerPortfolioUrl,
       });
+      try {
+        await sendEmail({ to: cleanEmail, subject: leadEmail.subject, html: leadEmail.html });
+      } catch (err) {
+        // Non-fatal: the visitor still gets the report on-page below, so a
+        // failed email copy shouldn't block the response — just log it.
+        console.error("Lead report email failed to send:", err.message);
+      }
     }
 
     // Best-effort notification to the owner — a failure here shouldn't block
@@ -107,7 +104,16 @@ app.post("/api/analyze", analyzeLimiter, async (req, res) => {
       });
     }
 
-    return res.json({ ok: true });
+    return res.json({
+      ok: true,
+      report: {
+        url: result.finalUrl || result.url,
+        likelyJsRendered: result.likelyJsRendered,
+        checks: result.checks,
+        ownerWhatsapp,
+        ownerPortfolioUrl,
+      },
+    });
   } catch (err) {
     console.error("Unexpected error in /api/analyze:", err);
     return res.status(500).json({ error: "Something went wrong on our end. Please try again shortly." });
